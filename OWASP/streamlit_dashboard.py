@@ -1819,6 +1819,13 @@ def main():
         if hm_selected_prompt != 'All':
             hm_df = hm_df[hm_df['prompt_version'] == hm_selected_prompt]
         
+        # Exclude CWEs with no FP cases in the dataset (all samples are true vulnerabilities)
+        # These CWEs always produce F1=0 because TP can never be > 0
+        EXCLUDED_CWES = ['CWE-328', 'CWE-330', 'CWE-614']
+        hm_df = hm_df[~hm_df['cwe'].isin(EXCLUDED_CWES)]
+        if EXCLUDED_CWES:
+            st.caption(f"ℹ️ Excluded {', '.join(EXCLUDED_CWES)} — no false positive cases in input data.")
+        
         if hm_df.empty:
             st.warning("No data available for the selected filters.")
         else:

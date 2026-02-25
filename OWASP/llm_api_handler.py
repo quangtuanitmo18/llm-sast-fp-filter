@@ -11,6 +11,7 @@ import re
 import sys
 import time
 
+import requests
 import tiktoken
 from openai import OpenAI
 
@@ -891,6 +892,87 @@ MODEL_CONFIGS = {
         "tokenizer": "gpt-4",
         "description": "Gemini Claude Sonnet 4.5 Thinking via CLIProxyAPI",
         "provider": "cliproxyapi"
+    },
+    "gpt-oss-120b-medium": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "OpenAI GPT-OSS 120B Medium via CLIProxyAPI",
+        "provider": "cliproxyapi"
+    },
+    # Groq Models (via Groq API)
+    "llama-3.3-70b-versatile": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.3 70B Versatile via Groq",
+        "provider": "groq"
+    },
+    "llama-3.3-70b-specdec": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.3 70B Speculative Decoding via Groq",
+        "provider": "groq"
+    },
+    "llama-3.1-70b-versatile": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.1 70B Versatile via Groq",
+        "provider": "groq"
+    },
+    "llama-3.1-8b-instant": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.1 8B Instant (Fast) via Groq",
+        "provider": "groq"
+    },
+    "llama-3.2-1b-preview": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.2 1B Preview via Groq",
+        "provider": "groq"
+    },
+    "llama-3.2-3b-preview": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.2 3B Preview via Groq",
+        "provider": "groq"
+    },
+    "mixtral-8x7b-32768": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Mixtral 8x7B (32k context) via Groq",
+        "provider": "groq"
+    },
+    "gemma2-9b-it": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Google Gemma 2 9B via Groq",
+        "provider": "groq"
+    },
+    "gemma-7b-it": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Google Gemma 7B via Groq",
+        "provider": "groq"
     }
 }
 
@@ -932,6 +1014,22 @@ def is_cliproxyapi_model(model: str) -> bool:
     if model.startswith("cliproxy:"):
         return True
     
+    return False
+
+def is_groq_model(model: str) -> bool:
+    """
+    Check if a model should use Groq API.
+    
+    Models with prefix "groq:" will use Groq API.
+    
+    Args:
+        model (str): Model name
+        
+    Returns:
+        bool: True if model should use Groq API, False otherwise
+    """
+    if model.startswith("groq:"):
+        return True
     return False
 
 def get_model_config(model: str) -> dict:
@@ -1129,6 +1227,11 @@ def send_to_llm(prompt, model, temperature=None, enable_token_counting=True, **k
         # Remove "cliproxy:" prefix if present
         actual_model = model.replace("cliproxy:", "")
         return send_to_cliproxyapi(prompt, actual_model, temperature, enable_token_counting, **kwargs)
+    
+    # Check if model should use Groq API
+    if is_groq_model(model):
+        actual_model = model.replace("groq:", "")
+        return send_to_groq(prompt, actual_model, temperature, enable_token_counting, **kwargs)
     
     # Route to appropriate provider based on model configuration
     if is_openai_model(model):
@@ -1737,6 +1840,123 @@ def send_to_cliproxyapi(prompt, model, temperature=None, enable_token_counting=T
     print("="*50 + "\n")
     
     return response.choices[0].message.content
+
+def send_to_groq(prompt, model, temperature=None, enable_token_counting=True, **kwargs):
+    """
+    Send a prompt to Groq API and return the response.
+    
+    Groq provides fast inference for open-source models via an OpenAI-compatible API.
+    Uses GROQ_API_KEY from environment variable.
+    
+    Args:
+        prompt (str): The prompt to send
+        model (str): The model to use (e.g., "llama-3.3-70b-versatile")
+        temperature (float, optional): Temperature for response generation
+        enable_token_counting (bool): Whether to count tokens
+        **kwargs: Additional parameters (max_tokens, top_p, etc.)
+    
+    Returns:
+        str: The response from the model
+    """
+    # Get API key
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        # Hardcoded fallback for convenience
+        api_key = os.getenv("GROQ_API_KEY", "")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY not found in environment. Set it with: export GROQ_API_KEY=your-key")
+    
+    base_url = "https://api.groq.com/openai/v1"
+    
+    # Prepare temperature
+    temp = temperature if temperature is not None else 0.0
+    max_tokens = kwargs.get("max_tokens", 4096)
+    timeout = kwargs.get("timeout", 120)
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a security assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": temp,
+        "max_tokens": max_tokens
+    }
+    
+    # Retry logic
+    max_retries = 5
+    base_delay = 2
+    max_delay = 60
+    
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(
+                f"{base_url}/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=timeout
+            )
+            
+            if resp.status_code == 429:
+                # Rate limit - retry with backoff
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                print(f"⚠️ Groq rate limit hit (attempt {attempt + 1}/{max_retries}). Waiting {delay}s...")
+                time.sleep(delay)
+                continue
+            
+            if not resp.ok:
+                error_msg = f"Groq API error: HTTP {resp.status_code}"
+                try:
+                    error_data = resp.json()
+                    if 'error' in error_data:
+                        error_msg += f" - {error_data['error']}"
+                except:
+                    error_msg += f" - {resp.text[:200]}"
+                raise Exception(error_msg)
+            
+            result = resp.json()
+            content = result["choices"][0]["message"]["content"]
+            
+            # Print usage info
+            usage = result.get("usage", {})
+            print("\n" + "="*50)
+            print(f"Groq API Call Summary (Model: {model})")
+            print("-"*50)
+            print(f"Input tokens:  {usage.get('prompt_tokens', 'N/A'):>8}")
+            print(f"Output tokens: {usage.get('completion_tokens', 'N/A'):>8}")
+            print(f"Total tokens:  {usage.get('total_tokens', 'N/A'):>8}")
+            print("-"*50)
+            try:
+                config = get_model_config(model)
+                print(f"Model config: {config['description']}")
+            except:
+                print(f"Model config: Groq API")
+            print(f"Parameters used: temperature={temp}, max_tokens={max_tokens}")
+            print("="*50 + "\n")
+            
+            return content
+            
+        except requests.exceptions.Timeout:
+            if attempt < max_retries - 1:
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                print(f"⚠️ Groq timeout (attempt {attempt + 1}/{max_retries}). Waiting {delay}s...")
+                time.sleep(delay)
+                continue
+            raise
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1 and ('429' in str(e) or '500' in str(e) or '502' in str(e)):
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                print(f"⚠️ Groq error (attempt {attempt + 1}/{max_retries}). Waiting {delay}s...")
+                time.sleep(delay)
+                continue
+            raise
+    
+    raise Exception("Failed to get response from Groq API after all retry attempts")
 
 def list_supported_models():
     """

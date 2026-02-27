@@ -2014,6 +2014,15 @@ def test_model_connectivity(model_name="gpt-4o"):
             print("✓ CLIProxyAPI client created successfully")
             return True
         
+        # Check Groq models
+        if is_groq_model(model_name):
+            groq_key = os.getenv('GROQ_API_KEY')
+            if not groq_key:
+                print("✗ GROQ_API_KEY environment variable is not set")
+                return False
+            print("✓ Groq client configured successfully")
+            return True
+        
         # Check OpenAI models
         if is_openai_model(model_name):
             client = OpenAI(timeout=10.0)

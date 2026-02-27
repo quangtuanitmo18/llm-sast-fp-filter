@@ -423,7 +423,7 @@ def main():
     st.header("📊 Interactive Visualizations")
     
     # Tab layout for different visualizations
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
         "🎯 Performance Metrics", 
         "📊 Custom Score Analysis", 
         "🔍 Confusion Matrix", 
@@ -432,7 +432,8 @@ def main():
         "🗂️ Dataset Analysis",
         "🔥 Interactive Heatmaps",
         "📊 Comprehensive Tables",
-        "🗺️ CWE × Model Heatmap"
+        "🗺️ CWE × Model Heatmap",
+        "💰 Latency vs Cost"
     ])
     
     with tab1:
@@ -1913,6 +1914,161 @@ def main():
                 "text/csv",
                 key='cwe_model_hm_download'
             )
+    
+    # ── Tab 10: Latency vs Cost Bubble Chart ──
+    with tab10:
+        st.subheader("💰 Throughput vs Cost — Bubble Chart")
+        st.markdown("Visualize the trade-off between **inference speed**, **cost**, and **F1 score** across models.")
+        st.markdown("Bubble size represents F1 score — larger bubbles = better performance.")
+        
+        # Hardcoded throughput & cost data (from user-provided benchmarks)
+        MODEL_BENCHMARKS = {
+            'gpt-5':                      {'tokens_per_sec': 91.2,  'cost_per_1m_tokens': 1.25},
+            'gpt-5.1':                    {'tokens_per_sec': 110.1, 'cost_per_1m_tokens': 1.25},
+            'gpt-5.2':                    {'tokens_per_sec': 85.5,  'cost_per_1m_tokens': 1.75},
+            'gemini-2.5-pro':             {'tokens_per_sec': 152.5, 'cost_per_1m_tokens': 1.25},
+            'gemini-2.5-flash':           {'tokens_per_sec': 243.3, 'cost_per_1m_tokens': 0.30},
+            'gemini-3-pro-preview':       {'tokens_per_sec': 128.7, 'cost_per_1m_tokens': 2.00},
+            'claude-sonnet-4-5-thinking': {'tokens_per_sec': 71.6,  'cost_per_1m_tokens': 3.00},
+            'claude-opus-4-6-thinking':   {'tokens_per_sec': 68.2,  'cost_per_1m_tokens': 5.00},
+            'qwen3-coder-plus':           {'tokens_per_sec': 43.6,  'cost_per_1m_tokens': 1.00},
+            'qwen3-coder-flash':          {'tokens_per_sec': 107.5, 'cost_per_1m_tokens': 0.30},
+        }
+        
+        # Prompt version filter
+        lc_prompt_versions = sorted(filtered_df['prompt_version'].unique().tolist())
+        lc_prompt_options = ['All'] + lc_prompt_versions
+        lc_selected_prompt = st.selectbox(
+            "Select Prompt Version",
+            lc_prompt_options,
+            key='lc_bubble_prompt'
+        )
+        
+        lc_df = filtered_df.copy()
+        if lc_selected_prompt != 'All':
+            lc_df = lc_df[lc_df['prompt_version'] == lc_selected_prompt]
+        
+        if lc_df.empty:
+            st.warning("No data available for the selected filters.")
+        else:
+            # Calculate micro-average F1 per model
+            lc_agg = lc_df.groupby('model').agg(
+                total_tp=('TP', 'sum'),
+                total_fp=('FP', 'sum'),
+                total_fn=('FN', 'sum')
+            ).reset_index()
+            
+            lc_agg['precision'] = lc_agg['total_tp'] / (lc_agg['total_tp'] + lc_agg['total_fp'])
+            lc_agg['recall'] = lc_agg['total_tp'] / (lc_agg['total_tp'] + lc_agg['total_fn'])
+            lc_agg['f1_score'] = 2 * (lc_agg['precision'] * lc_agg['recall']) / (
+                lc_agg['precision'] + lc_agg['recall']
+            )
+            lc_agg = lc_agg.fillna(0)
+            
+            # Merge with benchmark data
+            bubble_rows = []
+            for _, row in lc_agg.iterrows():
+                model_name = row['model']
+                if model_name in MODEL_BENCHMARKS:
+                    bm = MODEL_BENCHMARKS[model_name]
+                    bubble_rows.append({
+                        'Model': model_name,
+                        'Throughput (tokens/s)': bm['tokens_per_sec'],
+                        'Latency (ms/token)': round(1000 / bm['tokens_per_sec'], 2),
+                        'Cost ($/1M tokens)': bm['cost_per_1m_tokens'],
+                        'F1 Score': round(row['f1_score'], 3),
+                    })
+            
+            # Apply min-max normalization for bubble size to amplify visual differences
+            if bubble_rows:
+                f1_vals = [r['F1 Score'] for r in bubble_rows]
+                f1_min, f1_max = min(f1_vals), max(f1_vals)
+                for r in bubble_rows:
+                    if f1_max > f1_min:
+                        normalized = (r['F1 Score'] - f1_min) / (f1_max - f1_min)
+                    else:
+                        normalized = 0.5
+                    r['Bubble Size'] = 5 + (normalized ** 2) * 75  # Squared scaling: 5 (worst) to 80 (best)
+            
+            if not bubble_rows:
+                st.warning("No models with both benchmark data and evaluation results found.")
+            else:
+                bubble_df = pd.DataFrame(bubble_rows)
+                
+                bubble_df['Label'] = bubble_df['Model'] + ' (' + bubble_df['F1 Score'].astype(str) + ')'
+                
+                # Use vivid color palette
+                colors = px.colors.qualitative.Plotly
+                
+                fig_bubble = px.scatter(
+                    bubble_df,
+                    x='Latency (ms/token)',
+                    y='Cost ($/1M tokens)',
+                    size='Bubble Size',
+                    color='Model',
+                    text='Label',
+                    hover_data={'F1 Score': True, 'Throughput (tokens/s)': True, 'Bubble Size': False, 'Label': False},
+                    title=f"Latency vs Cost (Bubble Size = F1 Score)" + (
+                        f" [{lc_selected_prompt}]" if lc_selected_prompt != 'All' else " [All Prompt Versions]"
+                    ),
+                    size_max=60,
+                    color_discrete_sequence=colors,
+                )
+                
+                fig_bubble.update_traces(
+                    textposition='top center',
+                    textfont_size=10,
+                    marker=dict(opacity=1.0),
+                )
+                # Match text color and border color to each bubble's fill color
+                for i, trace in enumerate(fig_bubble.data):
+                    c = colors[i % len(colors)]
+                    trace.update(
+                        textfont_color=c,
+                        marker_line=dict(width=1, color=c),
+                    )
+                
+                fig_bubble.update_layout(
+                    height=600,
+                    xaxis=dict(title='<b>Задержка (мс/токен)</b>', showgrid=True, gridcolor='lightgray', rangemode='tozero'),
+                    yaxis_title='<b>Стоимость ($/1М входных токенов)</b>',
+                    showlegend=True,
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5),
+                    margin=dict(l=60, r=30, t=80, b=60),
+                )
+                
+                # White center dot on each bubble
+                fig_bubble.add_trace(go.Scatter(
+                    x=bubble_df['Latency (ms/token)'],
+                    y=bubble_df['Cost ($/1M tokens)'],
+                    mode='markers',
+                    marker=dict(size=5, color='white', line=dict(width=0.5, color='gray')),
+                    showlegend=False,
+                    hoverinfo='skip',
+                ))
+                
+                # Sweet Spot Zone — low latency + low cost area
+                fig_bubble.add_shape(
+                    type="rect",
+                    x0=3.5, x1=10, y0=0, y1=2.2,
+                    line=dict(color="green", width=2, dash="dash"),
+                    fillcolor="rgba(0, 200, 0, 0.05)",
+                    layer="below",
+                )
+                fig_bubble.add_annotation(
+                    x=2.8, y=2.1,
+                    text="<b>«Оптимальная зона»</b>",
+                    showarrow=False,
+                    font=dict(size=12, color="green"),
+                    xanchor="left",
+                )
+                
+                st.plotly_chart(fig_bubble, use_container_width=True, key='latency_cost_bubble')
+                
+                # Data table
+                with st.expander("📊 Show Data Table", expanded=False):
+                    display_df = bubble_df[['Model', 'Throughput (tokens/s)', 'Latency (ms/token)', 'Cost ($/1M tokens)', 'F1 Score']].sort_values('F1 Score', ascending=False)
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
     
     # Footer
     st.markdown("---")

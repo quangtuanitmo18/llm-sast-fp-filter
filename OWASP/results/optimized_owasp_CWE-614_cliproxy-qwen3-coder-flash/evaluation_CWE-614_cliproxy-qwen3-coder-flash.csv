@@ -24,7 +24,7 @@ BenchmarkTest00903,BenchmarkTest00903_cliproxy-qwen3-coder-flash.txt,securecooki
 BenchmarkTest00736,BenchmarkTest00736_cliproxy-qwen3-coder-flash.txt,securecookie,True,614,Vulnerable,Yes,High,No,No
 BenchmarkTest00491,BenchmarkTest00491_cliproxy-qwen3-coder-flash.txt,securecookie,True,614,Vulnerable,Yes,High,No,No
 BenchmarkTest01682,BenchmarkTest01682_cliproxy-qwen3-coder-flash.txt,securecookie,True,614,Vulnerable,Yes,High,No,No
-BenchmarkTest01185,BenchmarkTest01185_cliproxy-qwen3-coder-flash.txt,securecookie,True,614,Vulnerable,Yes,High,No,No
+BenchmarkTest01185,BenchmarkTest01185_cliproxy-qwen3-coder-flash.txt,securecookie,True,614,Vulnerable,No,High,Yes,No
 BenchmarkTest00300,BenchmarkTest00300_cliproxy-qwen3-coder-flash.txt,securecookie,True,614,Vulnerable,Yes,High,No,No
 BenchmarkTest00348,BenchmarkTest00348_cliproxy-qwen3-coder-flash.txt,securecookie,True,614,Vulnerable,Yes,High,No,No
 BenchmarkTest01683,BenchmarkTest01683_cliproxy-qwen3-coder-flash.txt,securecookie,True,614,Vulnerable,Yes,High,No,No

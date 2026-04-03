@@ -171,20 +171,23 @@ def main():
             with col_widget:
                 sorted_data = metrics_df.sort_values(metric_name, ascending=True)
                 
+                bold_models = [f"<b>{m}</b>" for m in sorted_data['Model']]
+                bold_text = [f"<b>{v}</b>" for v in sorted_data[metric_name].round(3)]
+                
                 fig_hbar = go.Figure(go.Bar(
                     x=sorted_data[metric_name],
-                    y=sorted_data['Model'],
+                    y=bold_models,
                     orientation='h',
                     marker_color=bar_color_map[metric_name],
-                    text=sorted_data[metric_name].round(3),
+                    text=bold_text,
                     textposition='outside',
-                    textfont=dict(size=11)
+                    textfont=dict(size=11, color='black')
                 ))
                 
                 fig_hbar.update_layout(
                     title=dict(text=chart_title, font=dict(size=14)),
                     xaxis=dict(range=[0, 1.15], title='', dtick=0.5),
-                    yaxis=dict(title=''),
+                    yaxis=dict(title='', tickfont=dict(color='black')),
                     height=max(350, len(sorted_data) * 35 + 80),
                     margin=dict(l=10, r=40, t=40, b=30),
                     showlegend=False
@@ -248,7 +251,7 @@ def main():
         if bubble_rows:
             bubble_df = pd.DataFrame(bubble_rows)
             
-            bubble_df['Label'] = bubble_df['Model'] + ' (' + bubble_df['F1 Score'].astype(str) + ')'
+            bubble_df['Label'] = '<b>' + bubble_df['Model'] + ' (' + bubble_df['F1 Score'].astype(str) + ')</b>'
             
             # Use vivid color palette
             colors = px.colors.qualitative.Plotly
@@ -268,7 +271,7 @@ def main():
             
             fig_bubble.update_traces(
                 textposition='top center',
-                textfont_size=10,
+                textfont_size=14,
                 marker=dict(opacity=1.0),
             )
             # Match text color and border color to each bubble's fill color
@@ -282,10 +285,10 @@ def main():
             fig_bubble.update_layout(
                 height=600,
                 xaxis=dict(title='<b>Задержка (мс/токен)</b>', showgrid=True, gridcolor='lightgray', rangemode='tozero'),
-                yaxis_title='<b>Стоимость ($/1М входных токенов)</b>',
+                yaxis=dict(title='<b>Стоимость ($/1М входных токенов)</b>', range=[-0.6, 6.2]),
                 showlegend=True,
                 legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5),
-                margin=dict(l=60, r=30, t=80, b=60),
+                margin=dict(l=60, r=30, t=100, b=60),
             )
             
             # White center dot on each bubble
@@ -302,7 +305,7 @@ def main():
             fig_bubble.add_shape(
                 type="rect",
                 x0=3.5, x1=12.5, y0=0, y1=2.2,
-                line=dict(color="green", width=2, dash="dash"),
+                line=dict(color="rgba(0, 200, 0, 0.4)", width=2, dash="dash"),
                 fillcolor="rgba(0, 200, 0, 0.05)",
                 layer="below",
             )

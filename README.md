@@ -1,27 +1,22 @@
-<div align="center">
-  <img src="assets/images/zero_false_logo.png" alt="ZeroFalse Logo" width="300">
-</div>
+# Master Thesis: Improving Precision in Static Analysis with LLMs
 
-# ZeroFalse: Improving Precision in Static Analysis with LLMs
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![OpenVuln](https://img.shields.io/badge/OpenVuln-7%20Projects-green.svg)](https://github.com/mhsniranmanesh/ZeroFalse)
+[![OpenVuln](https://img.shields.io/badge/OpenVuln-7%20Projects-green.svg)](https://github.com/quangtuanitmo18/master-thesis)
 [![OWASP](https://img.shields.io/badge/OWASP-Benchmark-orange.svg)](https://owasp.org/www-project-benchmark/)
 
 A research framework for evaluating Large Language Models (LLMs) in false positive reduction across multiple vulnerability datasets and CWE categories.
 
 ## Overview
 
-ZeroFalse combines static analysis with LLMs for security vulnerability detection and false positive reduction. The framework evaluates the effectiveness of various LLMs in reducing false positives from static analysis tools. This figure shows the complete pipeline flow from static analysis results through LLM processing to evaluation metrics: 
+This framework combines static analysis with LLMs for security vulnerability detection and false positive reduction. The framework evaluates the effectiveness of various LLMs in reducing false positives from static analysis tools. This figure shows the complete pipeline flow from static analysis results through LLM processing to evaluation metrics: 
 
 <div align="center">
-  <img src="assets/images/pipeline_overview.png" alt="ZeroFalse Pipeline Overview" width="600">
+  <img src="assets/images/pipeline_overview.png" alt="Pipeline Overview" width="600">
 </div>
 
 ### Key Features
 
-- **Multi-Model Support**: Integration with 10 state-of-the-art LLMs including GPT-5, Gemini 2.5 Pro, and DeepSeek R1
+- **Multi-Model Support**: Integration with state-of-the-art LLMs including GPT-4o, Gemini 2.5 Pro, and DeepSeek R1
 - **Dual Dataset Support**: Evaluation on both real-world vulnerabilities (OpenVuln) and standardized benchmark (OWASP)
 - **Comprehensive CWE Coverage**: Analysis across 10 major vulnerability categories
 - **Interactive Dashboard**: Streamlit-based visualization and analysis tools
@@ -62,15 +57,17 @@ Standardized evaluation using OWASP Java Benchmark with 10 CWE categories:
 
 ### Prerequisites
 - Python 3.8 or higher
-- OpenRouter API key (for OpenVuln)
-- OpenAI and OpenRouter API keys (for OWASP)
+- API Keys depending on your chosen model provider:
+  - **OpenRouter**: `OPENROUTER_API_KEY` (Standard models)
+  - **Groq**: `GROQ_API_KEY` (For models prefixed with `groq:`)
+  - **Local/CLI Proxy**: No key required (For models prefixed with `cliproxy:`)
 
 ### Installation
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/mhsniranmanesh/ZeroFalse
-   cd ZeroFalse
+   git clone https://github.com/quangtuanitmo18/master-thesis.git
+   cd master-thesis
    ```
 
 2. **Install dependencies:**
@@ -81,10 +78,16 @@ Standardized evaluation using OWASP Java Benchmark with 10 CWE categories:
 
 3. **Set up API keys:**
    ```bash
-   # For OpenVuln (OpenRouter)
-   export OPENROUTER_API_KEY="your-openrouter-api-key"
+   # For OpenRouter models
+   export OPENROUTER_API_KEY="your-openrouter-key"
    
-   # For OWASP (various providers)
+   # For Groq models
+   export GROQ_API_KEY="your-groq-key"
+   
+   # For CLI Proxy models (e.g., cliproxy:gemini-2.5-pro)
+   # No API key required; ensure your local CLI proxy is running on http://127.0.0.1:8317
+   
+   # For OWASP specific providers setup (Optional)
    cd OWASP
    python create_config.py
    ```
@@ -104,7 +107,7 @@ python code-context/optimized_code_context_extractor.py
 python analyze_specific_projects.py \
     --model "openai/gpt-4o-mini" \
     --api-key "your-openrouter-key" \
-    --projects "apache__jspwiki_CVE-2022-46907_2.11.3"
+    --prompt-type "optimized"
 
 # Run multi-model analysis
 python run_multi_model_analysis.py \
@@ -121,7 +124,9 @@ cd OWASP
 # Run single CWE analysis
 python analyze_with_llm.py \
     --sarif_file input_files/sarif_results/owasp-benchmark/owasp-benchmark-CWE-022.sarif \
-    --model "o4-mini" \
+    --project_src_root /home/user/benchmark-projects/BenchmarkJava \
+    --expected_results_csv input_files/ground_truth/expectedresults-1.2.csv \
+    --model "cliproxy:gemini-2.5-pro" \
     --prompt_version "optimized"
 
 # Run parallel analysis
@@ -138,7 +143,7 @@ python run_dashboard.py
 
 ## Dashboard
 
-ZeroFalse includes an interactive Streamlit dashboard for visualizing analysis results and model performance. The dashboard provides a dark theme interface with detailed model comparison views as shown here: 
+This project includes an interactive Streamlit dashboard for visualizing analysis results and model performance. The dashboard provides a dark theme interface with detailed model comparison views as shown here: 
 <div align="center">
   <img src="assets/images/dashboard_preview_dark.png" alt="Dashboard Preview" width="600">
 </div>
@@ -180,7 +185,7 @@ Finally, this comparison shows the effectiveness of baseline versus optimized pr
 ## Repository Structure
 
 ```
-ZeroFalse/
+master-thesis/
 ├── OpenVuln/                        # OpenVuln vulnerability analysis
 │   ├── analyze_specific_projects.py # Main analysis script
 │   ├── run_multi_model_analysis.py  # Multi-model analysis runner
@@ -218,34 +223,6 @@ python create_config.py
 3. **Memory Issues**: Reduce parallel workers
 4. **Rate Limiting**: Increase delay between calls
 
-## Collaborators
-
-- **Mohsen Iranmanesh** - Simon Fraser University, Burnaby, Canada (mia32@sfu.ca)
-- **Sina Moradi Sabet** - Amirkabir University of Technology, Tehran, Iran (sina.moradi@aut.ac.ir)
-- **Sina Marefat** - K. N. Toosi University of Technology, Tehran, Iran (sina.marefat@email.kntu.ac.ir)
-- **Ali Javidi Ghasr** - Ferdowsi University of Mashhad, Mashhad, Iran (alijavidighasr@mail.um.ac.ir)
-- **Allison Wilson** - Cyber Risk Solutions, Canada (awilson@cyberrisk-solutions.com)
-- **Iman Sharafaldin** - Forward Security, Vancouver, Canada (i.sharafaldin@fwdsec.com)
-- **Mohammad A. Tayebi** - Simon Fraser University, Burnaby, Canada (tayebi@sfu.ca)
-
-## Citation & License
-
-**MIT License** - Check [LICENSE](LICENSE) file for details.
-
-If you find our work helpful, please consider citing our research:
-
-```bibtex
-@inproceedings{iranmanesh2025zerofalse,
-  title={ZeroFalse: Improving Precision in Static Analysis with LLMs},
-  author={Mohsen Iranmanesh and Sina Moradi Sabet and Sina Marefat and Ali Javidi Ghasr and Allison Wilson and Iman Sharafaldin and Mohammad A. Tayebi},
-  booktitle={arXiv preprint},
-  year={2025},
-  url={https://arxiv.org/abs/[arxiv-id]}
-}
-```
-
-**arXiv Preprint**: [https://arxiv.org/abs/[arxiv-id]](https://arxiv.org/abs/[arxiv-id])
-
 ## References
 
 - [OWASP Benchmark](https://owasp.org/www-project-benchmark/)
@@ -255,4 +232,4 @@ If you find our work helpful, please consider citing our research:
 
 ---
 
-**ZeroFalse** - Improving Precision in Static Analysis with LLMs
+**Master Thesis** - Improving Precision in Static Analysis with LLMs

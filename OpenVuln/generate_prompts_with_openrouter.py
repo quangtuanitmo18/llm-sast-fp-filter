@@ -14,22 +14,34 @@ from typing import Dict, List, Any, Optional
 import requests
 import time
 
+# Import Groq helper
+from groq_helper import GroqAPIHelper, GROQ_MODELS
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class OpenRouterPromptGenerator:
-    def __init__(self, base_dir: str = ".", api_key: Optional[str] = None, model: str = "openai/gpt-4o-mini"):
+    def __init__(self, base_dir: str = ".", api_key: Optional[str] = None, model: str = "openai/gpt-4o-mini", prompt_type: str = "optimized"):
         self.base_dir = Path(base_dir)
         self.projects_info_path = self.base_dir / "Projects_info.csv"
-        self.code_contexts_path = self.base_dir / "code-context/optimized"
-        self.prompt_templates_path = self.base_dir / "prompt_templates" / "optimized"
-        self.output_path = self.base_dir / "prompts-responses-openrouter"
+        
+        # Dynamic paths based on prompt_type (optimized vs baseline)
+        self.prompt_type = prompt_type
+        self.code_contexts_path = self.base_dir / "code-context" / prompt_type
+        self.prompt_templates_path = self.base_dir / "prompt_templates" / prompt_type
+        
+        # Default output path (can be overridden)
+        self.output_path = self.base_dir / "results" / prompt_type
         
         # OpenRouter Configuration
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         self.model = model
         self.base_url = "https://openrouter.ai/api/v1"
+        
+        # Skip API key requirement for CLIProxyAPI models
+        if self._is_cliproxy_model(model) and not self.api_key:
+            logger.info("Using CLIProxyAPI mode - API key not required")
         
         # Load projects info
         self.projects_df = self._load_projects_info()
@@ -133,14 +145,32 @@ class OpenRouterPromptGenerator:
     def _generate_prompt(self, template: str, code_context: str) -> str:
         """Generate a prompt by filling the template with code context."""
         return template.replace("{code_context}", code_context)
+    
+    def _is_cliproxy_model(self, model: str) -> bool:
+        """Check if model uses CLIProxyAPI (prefix 'cliproxy:')."""
+        return model.startswith("cliproxy:")
+    
+    def _is_groq_model(self, model: str) -> bool:
+        """Check if model uses Groq API (prefix 'groq:')."""
+        return model.startswith("groq:")
 
     def _call_openrouter_api(self, prompt: str, model: Optional[str] = None) -> Dict[str, Any]:
         """Call OpenRouter API to get AI response."""
+        model = model or self.model
+        
+        # Route to Groq API if model has groq prefix
+        if self._is_groq_model(model):
+            actual_model = model.replace("groq:", "")
+            return self._call_groq_api(prompt, actual_model)
+        
+        # Route to CLIProxyAPI if model has cliproxy prefix
+        if self._is_cliproxy_model(model):
+            actual_model = model.replace("cliproxy:", "")
+            return self._call_cliproxy_api(prompt, actual_model)
+        
         if not self.api_key:
             logger.error("OpenRouter API key not provided")
             return self._generate_fallback_response()
-        
-        model = model or self.model
         
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -274,6 +304,167 @@ class OpenRouterPromptGenerator:
             logger.error(f"Request data: {json.dumps(data, indent=2)}")
             return self._generate_fallback_response()
 
+    def _call_cliproxy_api(self, prompt: str, model: str) -> Dict[str, Any]:
+        """Call CLIProxyAPI (local proxy server) to get AI response."""
+        base_url = "http://127.0.0.1:8317/v1"
+        
+        # Auto-prepend 'gemini-' prefix for Claude Sonnet models via CLIProxyAPI
+        # This allows using shorter names like 'claude-sonnet-4-5' instead of 'gemini-claude-sonnet-4-5'
+        # Only apply prefix for API call, keep original model name for file naming/display
+        api_model = model
+        if model in ["claude-sonnet-4-5", "claude-sonnet-4-5-thinking"]:
+            api_model = f"gemini-{model}"
+            logger.info(f"Auto-prepended 'gemini-' prefix for API call: {api_model}")
+        
+        headers = {
+            "Authorization": "Bearer your-api-key-1",
+            "Content-Type": "application/json",
+        }
+        
+        data = {
+            "model": api_model,  # Use api_model with prefix for API call
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "stream": False
+        }
+        
+        # Retry logic with exponential backoff
+        max_retries = 5
+        base_delay = 5
+        max_delay = 120
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    f"{base_url}/chat/completions",
+                    headers=headers,
+                    json=data,
+                    timeout=300
+                )
+                
+                # Success - parse and return
+                if response.ok:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"]
+                    
+                    # Try to parse as JSON (same logic as OpenRouter)
+                    try:
+                        parsed_response = json.loads(content)
+                        parsed_response.update({"model_used": f"cliproxy:{model}"})
+                        return parsed_response
+                    except json.JSONDecodeError:
+                        # Try extracting from markdown code blocks
+                        import re
+                        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
+                        if json_match:
+                            try:
+                                parsed_response = json.loads(json_match.group(1))
+                                parsed_response.update({"model_used": f"cliproxy:{model}"})
+                                return parsed_response
+                            except json.JSONDecodeError:
+                                pass
+                        
+                        # Fallback: return error response
+                        return {
+                            "False Positive": "ERROR",
+                            "Sanitization Found?": "ERROR",
+                            "Attack Feasible?": "ERROR",
+                            "Confidence": "ERROR",
+                            "model_used": f"cliproxy:{model}",
+                        }
+                
+                # Check for retryable errors (429, 500+)
+                is_retryable = response.status_code in [429, 500, 502, 503, 504]
+                
+                if is_retryable and attempt < max_retries - 1:
+                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    logger.warning(f"CLIProxyAPI error {response.status_code}, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"CLIProxyAPI call failed: HTTP {response.status_code}")
+                    return self._generate_fallback_response()
+                    
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    logger.warning(f"CLIProxyAPI connection error, retrying in {delay}s: {e}")
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"CLIProxyAPI call failed after {max_retries} attempts: {e}")
+                    logger.error("Make sure CLIProxyAPI is running on http://127.0.0.1:8317")
+                    return self._generate_fallback_response()
+        
+        return self._generate_fallback_response()
+    
+    def _call_groq_api(self, prompt: str, model: str) -> Dict[str, Any]:
+        """Call Groq API to get AI response."""
+        try:
+            # Initialize Groq helper
+            groq_helper = GroqAPIHelper(api_key=os.getenv("GROQ_API_KEY"))
+            
+            # Call Groq API
+            response = groq_helper.chat_completion(
+                model=model,
+                prompt=prompt,
+                temperature=0.7,
+                max_tokens=4096,
+                timeout=60
+            )
+            
+            content = response["content"]
+            
+            # Try to parse as JSON (same logic as other APIs)
+            try:
+                parsed_response = json.loads(content)
+                parsed_response.update({"model_used": f"groq:{model}"})
+                return parsed_response
+            except json.JSONDecodeError:
+                # Try extracting from markdown code blocks
+                import re
+                json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
+                if json_match:
+                    try:
+                        parsed_response = json.loads(json_match.group(1))
+                        parsed_response.update({"model_used": f"groq:{model}"})
+                        return parsed_response
+                    except json.JSONDecodeError:
+                        pass
+                
+                # Try to extract JSON-like content
+                json_pattern = r'\{[^{}]*"False Positive"[^{}]*\}'
+                json_matches = re.findall(json_pattern, content, re.DOTALL)
+                
+                for json_str in json_matches:
+                    try:
+                        json_str = json_str.strip()
+                        parsed_response = json.loads(json_str)
+                        
+                        # Validate required fields
+                        required_fields = ["False Positive", "Sanitization Found?", "Attack Feasible?", "Confidence"]
+                        if all(field in parsed_response for field in required_fields):
+                            parsed_response.update({"model_used": f"groq:{model}"})
+                            return parsed_response
+                    except json.JSONDecodeError:
+                        continue
+                
+                # If all parsing fails, wrap in error response
+                logger.warning(f"Could not parse Groq response as JSON. Content: {content[:200]}")
+                return {
+                    "False Positive": "ERROR",
+                    "Sanitization Found?": "ERROR",
+                    "Attack Feasible?": "ERROR",
+                    "Confidence": "ERROR",
+                    "model_used": f"groq:{model}",
+                    "raw_response": content[:500]
+                }
+        
+        except Exception as e:
+            logger.error(f"Groq API call failed: {e}")
+            return self._generate_fallback_response()
+    
     def _generate_fallback_response(self) -> Dict[str, Any]:
         """Generate a fallback response when API calls fail."""
         return {
@@ -313,8 +504,8 @@ class OpenRouterPromptGenerator:
         """Process projects and get OpenRouter AI responses."""
         all_results = []
         
-        # Create output directory
-        self.output_path.mkdir(exist_ok=True)
+        # Create output directory (including parents if needed)
+        self.output_path.mkdir(parents=True, exist_ok=True)
         
         projects_to_process = self.projects_df.head(max_projects) if max_projects else self.projects_df
         model_to_use = model or self.model
@@ -355,18 +546,45 @@ class OpenRouterPromptGenerator:
                 # Generate prompt
                 prompt = self._generate_prompt(template, code_context)
                 
+                # Save prompt to file
+                prompts_dir = project_dir / "prompts"
+                prompts_dir.mkdir(exist_ok=True)
+                prompt_file = prompts_dir / f"{alert_name}.txt"
+                with open(prompt_file, 'w', encoding='utf-8') as f:
+                    f.write(prompt)
+                
                 # Get OpenRouter AI response
                 logger.info(f"Getting OpenRouter AI response for {alert_name}...")
                 response = self._call_openrouter_api(prompt, model_to_use)
                 
+                # Save raw response content to file
+                responses_dir = project_dir / "responses"
+                responses_dir.mkdir(exist_ok=True)
+                response_file = responses_dir / f"{alert_name}.txt"
+                
+                # We need to extract the raw content from the response object if possible,
+                # but _call_openrouter_api returns a parsed dict.
+                # However, the parsed dict doesn't contain the raw content string easily if it was JSON parsed.
+                # Let's check _call_openrouter_api implementation.
+                # It returns a dict. We might need to modify _call_openrouter_api to return raw content too, 
+                # or just reconstruct it as JSON string. 
+                # But user wants "responses", usually the raw text from LLM.
+                # Here, `response` is a dict. I will save it as pretty-printed JSON.
+                
+                with open(response_file, 'w', encoding='utf-8') as f:
+                    json.dump(response, f, indent=2)
+
                 # Add metadata
+                # Determine AI provider based on model prefix
+                ai_provider = "cliproxy" if self._is_cliproxy_model(model_to_use) else "openrouter"
+                
                 response.update({
                     "project_slug": project_slug,
                     "CVE": cve_id,
                     "CWE": cwe_id,
                     "alert_name": alert_name,
                     "context_file": str(context_file),
-                    "ai_provider": "openrouter",
+                    "ai_provider": ai_provider,
                     "timestamp": pd.Timestamp.now().isoformat()
                 })
                  
@@ -444,11 +662,12 @@ def main():
     parser.add_argument("--model", default="openai/gpt-4o-mini", help="Model to use (default: openai/gpt-4o-mini)")
     parser.add_argument("--max-projects", type=int, help="Maximum number of projects to process")
     parser.add_argument("--delay", type=float, default=1.0, help="Delay between API calls in seconds")
+    parser.add_argument("--prompt-type", default="optimized", choices=["optimized", "baseline"], help="Prompt type to use (optimized or baseline)")
     parser.add_argument("--list-models", action="store_true", help="List available models and exit")
     
     args = parser.parse_args()
     
-    generator = OpenRouterPromptGenerator(api_key=args.api_key, model=args.model)
+    generator = OpenRouterPromptGenerator(api_key=args.api_key, model=args.model, prompt_type=args.prompt_type)
     
     if args.list_models:
         generator.list_available_models()

@@ -253,12 +253,13 @@ $RECYCLE.BIN/
 # =============================================================================
 
 # OWASP Results and Generated Data
-OWASP/results/*
-!OWASP/results/.gitkeep
+
 OWASP/dashboard-data/*
 !OWASP/dashboard-data/.gitkeep
 OWASP/dashboard-data_backup/*
 !OWASP/dashboard-data_backup/.gitkeep
+OWASP/results_test/*
+OpenVuln/results_test/*
 
 # OpenVuln Results
 OpenVuln/results/*
@@ -322,12 +323,12 @@ backup/
 *_results.txt
 
 # Parsed results from model analysis
-parsed_results.jsonl
-*_parsed_results.jsonl
+# parsed_results.jsonl  # Commented out to allow committing parsed results
+# *_parsed_results.jsonl  # Commented out to allow committing parsed results
 
 # Evaluation and analysis results
-evaluation_*.csv
-*_evaluation.csv
+# evaluation_*.csv  # Commented out to allow committing evaluation CSVs
+# *_evaluation.csv
 openrouter_prompts_responses.csv
 
 # Generated reports and summaries
@@ -349,12 +350,12 @@ openrouter_prompts_responses.csv
 
 # Additional research-specific patterns
 # Ignore large model output files but keep sample data
-**/responses/
-**/BenchmarkTest*.txt
+# **/responses/  # Commented out to allow committing responses
+# **/BenchmarkTest*.txt  # Commented out to allow committing prompts
 
 # Ignore individual model analysis results but keep aggregated data
-**/CWE-*/**/parsed_results.jsonl
-**/CWE-*/**/evaluation_*.csv
+# **/CWE-*/**/parsed_results.jsonl  # Commented out to allow committing parsed results
+# **/CWE-*/**/evaluation_*.csv  # Commented out to allow committing evaluation CSVs
 
 # Keep important SARIF files for analysis
 !**/sarif-files/*.sarif
@@ -424,7 +425,6 @@ docker-compose.yaml
 
 # Ignore specific large directories that are generated
 # Uncomment these if you want to ignore the entire directories
-# OWASP/results/
 # OWASP/dashboard-data/
 # OWASP/dashboard-data_backup/
 # OpenVuln/results/
@@ -461,3 +461,6 @@ docker-compose.yaml
 !**/config.ini.example
 !**/*.template
 !**/*.example
+
+# Snyk Security Extension - AI Rules (auto-generated)
+.cursor/rules/snyk_rules.mdc

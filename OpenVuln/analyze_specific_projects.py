@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--api-key", help="OpenRouter API key")
     parser.add_argument("--model", default="openai/gpt-4o-mini", help="Model to use")
     parser.add_argument("--delay", type=float, default=2.0, help="Delay between API calls")
+    parser.add_argument("--prompt-type", default="optimized", choices=["optimized", "baseline"], help="Prompt type to use (optimized or baseline)")
     
     args = parser.parse_args()
     
@@ -34,11 +35,16 @@ def main():
     print("🎯 Analyzing Specific Projects with OpenRouter")
     print("=" * 50)
     print(f"Target projects: {len(target_projects)}")
+    print(f"Prompt type: {args.prompt_type}")
     print()
     
     # Check for API key (command line argument or environment variable)
+    # Skip API key requirement for CLIProxyAPI models (prefix 'cliproxy:') and Groq models (prefix 'groq:')
     api_key = args.api_key or os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
+    is_cliproxy = args.model.startswith("cliproxy:")
+    is_groq = args.model.startswith("groq:")
+    
+    if not api_key and not is_cliproxy and not is_groq:
         print("❌ OpenRouter API key not found!")
         print("Please provide your API key using one of these methods:")
         print("1. Command line argument: --api-key 'your-api-key-here'")
@@ -46,11 +52,23 @@ def main():
         print("\nGet your API key from: https://openrouter.ai/keys")
         return
     
-    print("✅ OpenRouter API key found!")
+    if is_cliproxy:
+        print("✅ Using CLIProxyAPI mode (http://127.0.0.1:8317)")
+    elif is_groq:
+        print("✅ Using Groq API mode (https://api.groq.com)")
+        # Check for Groq API key
+        groq_key = os.getenv("GROQ_API_KEY")
+        if not groq_key:
+            print("❌ GROQ_API_KEY environment variable not found!")
+            print("Please set it: export GROQ_API_KEY='your-groq-api-key'")
+            print("Get your API key from: https://console.groq.com/keys")
+            return
+    else:
+        print("✅ OpenRouter API key found!")
     print()
     
     # Initialize the generator
-    generator = OpenRouterPromptGenerator(api_key=api_key, model=args.model)
+    generator = OpenRouterPromptGenerator(api_key=api_key, model=args.model, prompt_type=args.prompt_type)
     
     # Filter the projects dataframe to only include target projects
     original_df = generator.projects_df
@@ -69,9 +87,15 @@ def main():
     # Update the generator to use only filtered projects
     generator.projects_df = filtered_df
     
-    # Set custom output directory for OpenVuln
-    model_name = args.model.replace("/", "_").replace("-", "_")
-    p = f"./results/optimized/{model_name}"
+    # Set custom output directory
+    # For cliproxy and groq models, keep the prefix; for others, sanitize slashes
+    if is_cliproxy or is_groq:
+        model_name = args.model.replace("/", "_").replace("-", "_").replace(":", "_")
+    else:
+        model_name = args.model.replace("/", "_").replace("-", "_")
+    
+    # Use prompt_type in output path
+    p = f"./results/{args.prompt_type}/{model_name}"
     generator.output_path = Path(p)
     
     print("🚀 Starting analysis...")

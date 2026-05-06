@@ -4,18 +4,19 @@ OWASP Experiment Analysis Dashboard
 Interactive web-based visualization for experiment results
 """
 
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-import plotly.figure_factory as ff
+import glob
 import json
 import os
-import glob
 from pathlib import Path
-import seaborn as sns
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.figure_factory as ff
+import plotly.graph_objects as go
+import seaborn as sns
+import streamlit as st
 
 # Page configuration
 st.set_page_config(
@@ -66,7 +67,13 @@ def load_experiment_data():
                         break
                 
                 if cwe_part:
-                    cwe = cwe_part
+                    # Normalize CWE ID: remove leading zeros (e.g., "CWE-090" -> "CWE-90")
+                    cwe_number_str = cwe_part.replace("CWE-", "")
+                    if cwe_number_str.isdigit():
+                        cwe_number = str(int(cwe_number_str))  # Remove leading zeros
+                        cwe = f"CWE-{cwe_number}"
+                    else:
+                        cwe = cwe_part
                     model = '_'.join(model_parts) if model_parts else "unknown"
                     run_id = "default"  # Default run_id since it's not in directory name
                 else:
@@ -93,7 +100,13 @@ def load_experiment_data():
                     prompt_version = "baseline"  # Default for old format
                     dataset = "owasp"  # Default for old format
                     run_id = '_'.join(run_id_parts)
-                    cwe = cwe_part
+                    # Normalize CWE ID: remove leading zeros (e.g., "CWE-090" -> "CWE-90")
+                    cwe_number_str = cwe_part.replace("CWE-", "")
+                    if cwe_number_str.isdigit():
+                        cwe_number = str(int(cwe_number_str))  # Remove leading zeros
+                        cwe = f"CWE-{cwe_number}"
+                    else:
+                        cwe = cwe_part
                     model = '_'.join(model_parts) if model_parts else "unknown"
                 else:
                     # Fallback to simple parsing if no CWE pattern found
@@ -118,7 +131,7 @@ def load_experiment_data():
             df['dataset'] = dataset
             df['run_id'] = run_id
             df['cwe'] = cwe
-            df['model'] = model
+            df['model'] = model.replace('cliproxy-', '')
             df['file_path'] = str(file_path)
             
             all_data.append(df)
@@ -138,33 +151,43 @@ def load_experiment_data():
     
     for (prompt_version, dataset, run_id, cwe, model), group in combined_df.groupby(['prompt_version', 'dataset', 'run_id', 'cwe', 'model']):
         # Calculate confusion matrix from individual test results
-        tp = 0  # True Positives: LLM says vulnerable, actually vulnerable
-        fp = 0  # False Positives: LLM says vulnerable, actually safe
-        tn = 0  # True Negatives: LLM says safe, actually safe
-        fn = 0  # False Negatives: LLM says safe, actually vulnerable
+        # Convention: Positive = LLM identifies alert as False Positive (safe)
+        # This aligns with the thesis topic: "FP identification/detection"
+        tp = 0  # True Positives: LLM says FP (safe), actually safe → correct FP identification
+        fp = 0  # False Positives: LLM says FP (safe), actually vulnerable → missed real vuln!
+        tn = 0  # True Negatives: LLM says not FP (vuln), actually vulnerable → correctly kept
+        fn = 0  # False Negatives: LLM says not FP (vuln), actually safe → missed FP
         
         # Count confusion matrix elements
         for _, row in group.iterrows():
-            is_vulnerable = row.get('ground_truth_is_vulnerable', False)
+            # Parse ground truth: handle both boolean and string values
+            gt_vuln = row.get('ground_truth_is_vulnerable', False)
+            if isinstance(gt_vuln, str):
+                is_vulnerable = gt_vuln.strip().lower() in ['true', 'yes', '1']
+            else:
+                is_vulnerable = bool(gt_vuln)
             
             # Determine LLM prediction based on available columns
+            # llm_prediction = True means LLM says "Attack Feasible" (= NOT a false positive)
             llm_prediction = None
             
             if 'llm_Attack Feasible?' in row and pd.notna(row['llm_Attack Feasible?']):
-                llm_prediction = row['llm_Attack Feasible?'] == 'Yes'
+                llm_prediction = str(row['llm_Attack Feasible?']).strip().lower() == 'yes'
             elif 'llm_False Positive' in row and pd.notna(row['llm_False Positive']):
-                llm_prediction = row['llm_False Positive'] == 'No'  # Not a false positive = vulnerable
+                llm_prediction = str(row['llm_False Positive']).strip().lower() == 'no'  # Not a false positive = vulnerable
             else:
                 continue  # Skip if we can't determine prediction
             
-            if llm_prediction and is_vulnerable:
-                tn += 1
-            elif llm_prediction and not is_vulnerable:
-                fn += 1
-            elif not llm_prediction and not is_vulnerable:
-                tp += 1
+            # llm_prediction=True → LLM says "not FP" (vulnerable)
+            # llm_prediction=False → LLM says "FP" (safe) → this is the "Positive" class
+            if not llm_prediction and not is_vulnerable:
+                tp += 1  # LLM says FP, actually safe → correct FP identification
             elif not llm_prediction and is_vulnerable:
-                fp += 1
+                fp += 1  # LLM says FP, actually vulnerable → dangerous miss!
+            elif llm_prediction and is_vulnerable:
+                tn += 1  # LLM says not FP, actually vulnerable → correctly kept
+            elif llm_prediction and not is_vulnerable:
+                fn += 1  # LLM says not FP, actually safe → missed FP
         
         # Calculate metrics
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
@@ -199,10 +222,23 @@ def load_experiment_data():
         result_df.attrs['tn_col'] = 'true_negatives'
         result_df.attrs['fn_col'] = 'false_negatives'
         
+        # Sort by CWE for consistent display (handle both 2-digit and 3-digit CWEs)
+        def cwe_sort_key(cwe_str):
+            """Extract numeric part for sorting"""
+            if isinstance(cwe_str, str) and 'CWE-' in cwe_str:
+                try:
+                    return int(cwe_str.replace('CWE-', ''))
+                except:
+                    return 9999
+            return 9999
+        
+        result_df['_cwe_sort'] = result_df['cwe'].apply(cwe_sort_key)
+        result_df = result_df.sort_values('_cwe_sort').drop('_cwe_sort', axis=1)
+        
         # Debug: Show aggregation results
         st.write(f"✅ Aggregated {len(aggregated_data)} experiments")
         st.write("Sample aggregated data:")
-        st.write(result_df.head())
+        st.write(result_df)
         
         return result_df
     else:
@@ -387,7 +423,7 @@ def main():
     st.header("📊 Interactive Visualizations")
     
     # Tab layout for different visualizations
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
         "🎯 Performance Metrics", 
         "📊 Custom Score Analysis", 
         "🔍 Confusion Matrix", 
@@ -395,7 +431,9 @@ def main():
         "📋 Data Table",
         "🗂️ Dataset Analysis",
         "🔥 Interactive Heatmaps",
-        "📊 Comprehensive Tables"
+        "📊 Comprehensive Tables",
+        "🗺️ CWE × Model Heatmap",
+        "💰 Latency vs Cost"
     ])
     
     with tab1:
@@ -467,6 +505,73 @@ def main():
             )
             fig.update_xaxes(tickangle=45)
             st.plotly_chart(fig, use_container_width=True, key="model_metrics")
+            
+            # === Horizontal Bar Charts: Recall, Precision, F1-Score (side-by-side) ===
+            # Show which prompt versions are selected
+            active_prompt_versions = ', '.join(sorted(filtered_df['prompt_version'].unique()))
+            st.subheader(f"📊 Model Comparison: Recall, Precision & F1-Score — [{active_prompt_versions}]")
+            
+            # Build data with all 3 metrics per model (reuse aggregated confusion matrix)
+            all_metrics_data = []
+            for model_name, model_group in filtered_df.groupby('model'):
+                total_tp = model_group['TP'].sum()
+                total_fp = model_group['FP'].sum()
+                total_tn = model_group['TN'].sum()
+                total_fn = model_group['FN'].sum()
+                
+                m_precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0
+                m_recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0
+                m_f1 = 2 * (m_precision * m_recall) / (m_precision + m_recall) if (m_precision + m_recall) > 0 else 0
+                
+                all_metrics_data.append({
+                    'model': model_name,
+                    'recall': m_recall,
+                    'precision': m_precision,
+                    'f1_score': m_f1
+                })
+            
+            all_metrics_df = pd.DataFrame(all_metrics_data)
+            
+            # Create 3 columns for side-by-side charts
+            hbar_col1, hbar_col2, hbar_col3 = st.columns(3)
+            
+            bar_color_map = {
+                'recall': '#4A7FB5',      # medium blue
+                'precision': '#6BAED6',    # lighter blue
+                'f1_score': '#2C4A6E'      # dark blue
+            }
+            
+            for col_widget, metric_name, chart_title in [
+                (hbar_col1, 'recall', 'Recall'),
+                (hbar_col2, 'precision', 'Precision'),
+                (hbar_col3, 'f1_score', 'F1-Score')
+            ]:
+                with col_widget:
+                    sorted_df = all_metrics_df.sort_values(metric_name, ascending=True)  # ascending for bottom-to-top
+                    
+                    bold_models = [f"<b>{m}</b>" for m in sorted_df['model']]
+                    bold_text = [f"<b>{v}</b>" for v in sorted_df[metric_name].round(3)]
+                    
+                    fig_hbar = go.Figure(go.Bar(
+                        x=sorted_df[metric_name],
+                        y=bold_models,
+                        orientation='h',
+                        marker_color=bar_color_map[metric_name],
+                        text=bold_text,
+                        textposition='outside',
+                        textfont=dict(size=11, color='black')
+                    ))
+                    
+                    fig_hbar.update_layout(
+                        title=dict(text=chart_title, font=dict(size=14)),
+                        xaxis=dict(range=[0, 1.15], title='', dtick=0.5),
+                        yaxis=dict(title='', tickfont=dict(color='black')),
+                        height=max(350, len(sorted_df) * 35 + 80),
+                        margin=dict(l=10, r=40, t=40, b=30),
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig_hbar, use_container_width=True, key=f"hbar_{metric_name}")
             
             # Also show detailed breakdown by CWE
             st.subheader(f"Detailed {selected_metric.replace('_', ' ').title()} by Model and CWE")
@@ -1688,6 +1793,285 @@ def main():
                 "cwe_model_pivot_table.csv",
                 "text/csv"
             )
+    
+    with tab9:
+        st.subheader("🗺️ CWE × Model Heatmap")
+        st.markdown("Visualize performance metrics as a heatmap with **CWE types as rows** and **Models as columns**.")
+        
+        # Controls
+        hm_col1, hm_col2 = st.columns(2)
+        
+        with hm_col1:
+            hm_metric = st.selectbox(
+                "Select Metric",
+                ['accuracy', 'precision', 'recall', 'f1_score'],
+                format_func=lambda x: x.replace('_', ' ').title(),
+                key='cwe_model_hm_metric'
+            )
+        
+        with hm_col2:
+            hm_prompt_versions = sorted(filtered_df['prompt_version'].unique().tolist())
+            hm_prompt_options = ['All'] + hm_prompt_versions
+            hm_selected_prompt = st.selectbox(
+                "Select Prompt Version",
+                hm_prompt_options,
+                key='cwe_model_hm_prompt'
+            )
+        
+        # Filter by prompt version if needed
+        hm_df = filtered_df.copy()
+        if hm_selected_prompt != 'All':
+            hm_df = hm_df[hm_df['prompt_version'] == hm_selected_prompt]
+        
+        # Exclude CWEs with no FP cases in the dataset (all samples are true vulnerabilities)
+        # These CWEs always produce F1=0 because TP can never be > 0
+        EXCLUDED_CWES = ['CWE-328', 'CWE-330', 'CWE-614']
+        hm_df = hm_df[~hm_df['cwe'].isin(EXCLUDED_CWES)]
+        if EXCLUDED_CWES:
+            st.caption(f"ℹ️ Excluded {', '.join(EXCLUDED_CWES)} — no false positive cases in input data.")
+        
+        if hm_df.empty:
+            st.warning("No data available for the selected filters.")
+        else:
+            # Aggregate confusion matrix per (CWE, Model) and recalculate metrics
+            hm_agg = hm_df.groupby(['cwe', 'model']).agg(
+                total_tp=('TP', 'sum'),
+                total_fp=('FP', 'sum'),
+                total_tn=('TN', 'sum'),
+                total_fn=('FN', 'sum')
+            ).reset_index()
+            
+            # Calculate metrics from aggregated confusion matrix
+            hm_agg['precision'] = hm_agg['total_tp'] / (hm_agg['total_tp'] + hm_agg['total_fp'])
+            hm_agg['recall'] = hm_agg['total_tp'] / (hm_agg['total_tp'] + hm_agg['total_fn'])
+            hm_agg['accuracy'] = (hm_agg['total_tp'] + hm_agg['total_tn']) / (
+                hm_agg['total_tp'] + hm_agg['total_tn'] + hm_agg['total_fp'] + hm_agg['total_fn']
+            )
+            hm_agg['f1_score'] = 2 * (hm_agg['precision'] * hm_agg['recall']) / (
+                hm_agg['precision'] + hm_agg['recall']
+            )
+            hm_agg = hm_agg.fillna(0)
+            
+            # Pivot to CWE (rows) × Model (columns)
+            hm_pivot = hm_agg.pivot(index='cwe', columns='model', values=hm_metric).fillna(0)
+            
+            # Sort CWE rows by numeric part
+            def cwe_sort_key(cwe_str):
+                try:
+                    return int(cwe_str.split('-')[-1])
+                except (ValueError, IndexError):
+                    return 0
+            
+            hm_pivot = hm_pivot.loc[sorted(hm_pivot.index, key=cwe_sort_key)]
+            
+            # Create heatmap using plotly
+            fig_hm = px.imshow(
+                hm_pivot.round(3),
+                text_auto='.3f',
+                color_continuous_scale='Blues',
+                aspect='auto',
+                labels=dict(
+                    x='Model',
+                    y='CWE',
+                    color=hm_metric.replace('_', ' ').title()
+                ),
+                title=f"{hm_metric.replace('_', ' ').title()} — CWE × Model" + (
+                    f" [{hm_selected_prompt}]" if hm_selected_prompt != 'All' else " [All Prompt Versions]"
+                )
+            )
+            
+            fig_hm.update_layout(
+                height=max(450, len(hm_pivot.index) * 55 + 120),
+                xaxis=dict(side='bottom', tickangle=45),
+                yaxis=dict(autorange='reversed'),
+                margin=dict(l=80, r=30, t=60, b=120),
+                font=dict(size=12)
+            )
+            
+            fig_hm.update_traces(textfont=dict(size=11))
+            
+            st.plotly_chart(fig_hm, use_container_width=True, key='cwe_model_heatmap')
+            
+            # Data table below
+            with st.expander("📊 Show Data Table", expanded=False):
+                st.dataframe(hm_pivot.round(3), use_container_width=True)
+            
+            # Summary row
+            hm_s1, hm_s2, hm_s3, hm_s4 = st.columns(4)
+            flat_vals = hm_pivot.values.flatten()
+            with hm_s1:
+                st.metric("Mean", f"{flat_vals.mean():.3f}")
+            with hm_s2:
+                st.metric("Median", f"{np.median(flat_vals):.3f}")
+            with hm_s3:
+                st.metric("Min", f"{flat_vals.min():.3f}")
+            with hm_s4:
+                st.metric("Max", f"{flat_vals.max():.3f}")
+            
+            # Export
+            csv_hm = hm_pivot.to_csv()
+            st.download_button(
+                "💾 Download CWE×Model Heatmap CSV",
+                csv_hm,
+                f"cwe_model_heatmap_{hm_metric}_{hm_selected_prompt}.csv",
+                "text/csv",
+                key='cwe_model_hm_download'
+            )
+    
+    # ── Tab 10: Latency vs Cost Bubble Chart ──
+    with tab10:
+        st.subheader("💰 Throughput vs Cost — Bubble Chart")
+        st.markdown("Visualize the trade-off between **inference speed**, **cost**, and **F1 score** across models.")
+        st.markdown("Bubble size represents F1 score — larger bubbles = better performance.")
+        
+        # Hardcoded throughput & cost data (from user-provided benchmarks)
+        MODEL_BENCHMARKS = {
+            'gpt-5':                      {'tokens_per_sec': 91.2,  'cost_per_1m_tokens': 1.25},
+            'gpt-5.1':                    {'tokens_per_sec': 110.1, 'cost_per_1m_tokens': 1.25},
+            'gpt-5.2':                    {'tokens_per_sec': 85.5,  'cost_per_1m_tokens': 1.75},
+            'gemini-2.5-pro':             {'tokens_per_sec': 152.5, 'cost_per_1m_tokens': 1.25},
+            'gemini-2.5-flash':           {'tokens_per_sec': 243.3, 'cost_per_1m_tokens': 0.30},
+            'gemini-3-pro-preview':       {'tokens_per_sec': 128.7, 'cost_per_1m_tokens': 2.00},
+            'claude-sonnet-4-5-thinking': {'tokens_per_sec': 71.6,  'cost_per_1m_tokens': 3.00},
+            'claude-opus-4-6-thinking':   {'tokens_per_sec': 68.2,  'cost_per_1m_tokens': 5.00},
+            'qwen3-coder-plus':           {'tokens_per_sec': 43.6,  'cost_per_1m_tokens': 1.00},
+            'qwen3-coder-flash':          {'tokens_per_sec': 107.5, 'cost_per_1m_tokens': 0.30},
+        }
+        
+        # Prompt version filter
+        lc_prompt_versions = sorted(filtered_df['prompt_version'].unique().tolist())
+        lc_prompt_options = ['All'] + lc_prompt_versions
+        lc_selected_prompt = st.selectbox(
+            "Select Prompt Version",
+            lc_prompt_options,
+            key='lc_bubble_prompt'
+        )
+        
+        lc_df = filtered_df.copy()
+        if lc_selected_prompt != 'All':
+            lc_df = lc_df[lc_df['prompt_version'] == lc_selected_prompt]
+        
+        if lc_df.empty:
+            st.warning("No data available for the selected filters.")
+        else:
+            # Calculate micro-average F1 per model
+            lc_agg = lc_df.groupby('model').agg(
+                total_tp=('TP', 'sum'),
+                total_fp=('FP', 'sum'),
+                total_fn=('FN', 'sum')
+            ).reset_index()
+            
+            lc_agg['precision'] = lc_agg['total_tp'] / (lc_agg['total_tp'] + lc_agg['total_fp'])
+            lc_agg['recall'] = lc_agg['total_tp'] / (lc_agg['total_tp'] + lc_agg['total_fn'])
+            lc_agg['f1_score'] = 2 * (lc_agg['precision'] * lc_agg['recall']) / (
+                lc_agg['precision'] + lc_agg['recall']
+            )
+            lc_agg = lc_agg.fillna(0)
+            
+            # Merge with benchmark data
+            bubble_rows = []
+            for _, row in lc_agg.iterrows():
+                model_name = row['model']
+                if model_name in MODEL_BENCHMARKS:
+                    bm = MODEL_BENCHMARKS[model_name]
+                    bubble_rows.append({
+                        'Model': model_name,
+                        'Throughput (tokens/s)': bm['tokens_per_sec'],
+                        'Latency (ms/token)': round(1000 / bm['tokens_per_sec'], 2),
+                        'Cost ($/1M tokens)': bm['cost_per_1m_tokens'],
+                        'F1 Score': round(row['f1_score'], 3),
+                    })
+            
+            # Apply min-max normalization for bubble size to amplify visual differences
+            if bubble_rows:
+                f1_vals = [r['F1 Score'] for r in bubble_rows]
+                f1_min, f1_max = min(f1_vals), max(f1_vals)
+                for r in bubble_rows:
+                    if f1_max > f1_min:
+                        normalized = (r['F1 Score'] - f1_min) / (f1_max - f1_min)
+                    else:
+                        normalized = 0.5
+                    r['Bubble Size'] = 5 + (normalized ** 2) * 75  # Squared scaling: 5 (worst) to 80 (best)
+            
+            if not bubble_rows:
+                st.warning("No models with both benchmark data and evaluation results found.")
+            else:
+                bubble_df = pd.DataFrame(bubble_rows)
+                
+                bubble_df['Label'] = '<b>' + bubble_df['Model'] + ' (' + bubble_df['F1 Score'].astype(str) + ')</b>'
+                
+                # Use vivid color palette
+                colors = px.colors.qualitative.Plotly
+                
+                fig_bubble = px.scatter(
+                    bubble_df,
+                    x='Latency (ms/token)',
+                    y='Cost ($/1M tokens)',
+                    size='Bubble Size',
+                    color='Model',
+                    text='Label',
+                    hover_data={'F1 Score': True, 'Throughput (tokens/s)': True, 'Bubble Size': False, 'Label': False},
+                    title=f"Latency vs Cost (Bubble Size = F1 Score)" + (
+                        f" [{lc_selected_prompt}]" if lc_selected_prompt != 'All' else " [All Prompt Versions]"
+                    ),
+                    size_max=60,
+                    color_discrete_sequence=colors,
+                )
+                
+                fig_bubble.update_traces(
+                    textposition='top center',
+                    textfont_size=14,
+                    marker=dict(opacity=1.0),
+                )
+                # Match text color and border color to each bubble's fill color
+                for i, trace in enumerate(fig_bubble.data):
+                    c = colors[i % len(colors)]
+                    trace.update(
+                        textfont_color=c,
+                        marker_line=dict(width=1, color=c),
+                    )
+                
+                fig_bubble.update_layout(
+                    height=600,
+                    xaxis=dict(title='<b>Задержка (мс/токен)</b>', showgrid=True, gridcolor='lightgray', rangemode='tozero'),
+                    yaxis=dict(title='<b>Стоимость ($/1М входных токенов)</b>', range=[-0.6, 6.2]),
+                    showlegend=True,
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5),
+                    margin=dict(l=60, r=30, t=100, b=60),
+                )
+                
+                # White center dot on each bubble
+                fig_bubble.add_trace(go.Scatter(
+                    x=bubble_df['Latency (ms/token)'],
+                    y=bubble_df['Cost ($/1M tokens)'],
+                    mode='markers',
+                    marker=dict(size=5, color='white', line=dict(width=0.5, color='gray')),
+                    showlegend=False,
+                    hoverinfo='skip',
+                ))
+                
+                # Sweet Spot Zone — low latency + low cost area
+                fig_bubble.add_shape(
+                    type="rect",
+                    x0=3.5, x1=10, y0=0, y1=2.2,
+                    line=dict(color="rgba(0, 200, 0, 0.4)", width=2, dash="dash"),
+                    fillcolor="rgba(0, 200, 0, 0.05)",
+                    layer="below",
+                )
+                fig_bubble.add_annotation(
+                    x=2.8, y=2.1,
+                    text="<b>«Оптимальная зона»</b>",
+                    showarrow=False,
+                    font=dict(size=12, color="green"),
+                    xanchor="left",
+                )
+                
+                st.plotly_chart(fig_bubble, use_container_width=True, key='latency_cost_bubble')
+                
+                # Data table
+                with st.expander("📊 Show Data Table", expanded=False):
+                    display_df = bubble_df[['Model', 'Throughput (tokens/s)', 'Latency (ms/token)', 'Cost ($/1M tokens)', 'F1 Score']].sort_values('F1 Score', ascending=False)
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
     
     # Footer
     st.markdown("---")

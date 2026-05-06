@@ -11,6 +11,7 @@ import re
 import sys
 import time
 
+import requests
 import tiktoken
 from openai import OpenAI
 
@@ -23,6 +24,38 @@ MODEL_PRICING = {
     "gpt-5": {
         "input": 0.00125,  # $1.25 per 1M tokens = $0.00125 per 1K tokens for input
         "output": 0.01     # $10 per 1M tokens = $0.01 per 1K tokens for output
+    },
+    "gpt-5-codex": {
+        "input": 0.00125,  # Estimated pricing (same as gpt-5)
+        "output": 0.01
+    },
+    "gpt-5-codex-mini": {
+        "input": 0.000625,  # Estimated pricing (half of gpt-5)
+        "output": 0.005
+    },
+    "gpt-5.1": {
+        "input": 0.00125,  # Estimated pricing (same as gpt-5)
+        "output": 0.01
+    },
+    "gpt-5.1-codex": {
+        "input": 0.00125,  # Estimated pricing (same as gpt-5)
+        "output": 0.01
+    },
+    "gpt-5.1-codex-mini": {
+        "input": 0.000625,  # Estimated pricing (half of gpt-5)
+        "output": 0.005
+    },
+    "gpt-5.1-codex-max": {
+        "input": 0.0025,  # Estimated pricing (double of gpt-5)
+        "output": 0.02
+    },
+    "gpt-5.2": {
+        "input": 0.00125,  # Estimated pricing (same as gpt-5)
+        "output": 0.01
+    },
+    "gpt-5.2-codex": {
+        "input": 0.00125,  # Estimated pricing (same as gpt-5)
+        "output": 0.01
     },
     "gpt-4": {
         "input": 0.03,  # $0.03 per 1K tokens for input
@@ -119,6 +152,11 @@ MODEL_PRICING = {
         "input": 0.00014,  # $0.00014 per 1K tokens for input
         "output": 0.00028  # $0.00028 per 1K tokens for output
     },
+    # TngTech Models (via OpenRouter)
+    "tngtech/deepseek-r1t2-chimera:free": {
+        "input": 0.0,       # Free tier - no cost for input
+        "output": 0.0       # Free tier - no cost for output
+    },
     # Google Models (via OpenRouter)
     "google/gemini-1.5-flash": {
         "input": 0.000075,  # $0.000075 per 1K tokens for input
@@ -214,6 +252,24 @@ MODEL_PRICING = {
         "input": 0.00005,   # $0.05 per 1M tokens = $0.00005 per 1K tokens for input
         "output": 0.0002    # $0.20 per 1M tokens = $0.0002 per 1K tokens for output
     },
+    # Qwen Models (via CLIProxyAPI)
+    "qwen3-coder-plus": {
+        "input": 0.0002,    # $0.20 per 1M tokens = $0.0002 per 1K tokens for input
+        "output": 0.0008    # $0.80 per 1M tokens = $0.0008 per 1K tokens for output
+    },
+    "qwen3-coder-flash": {
+        "input": 0.0001,    # $0.10 per 1M tokens = $0.0001 per 1K tokens for input
+        "output": 0.0004    # $0.40 per 1M tokens = $0.0004 per 1K tokens for output
+    },
+    # Claude Models (via CLIProxyAPI)
+    "gemini-claude-sonnet-4-5": {
+        "input": 0.003,     # $0.003 per 1K tokens for input
+        "output": 0.015     # $0.015 per 1K tokens for output
+    },
+    "gemini-claude-sonnet-4-5-thinking": {
+        "input": 0.003,     # $0.003 per 1K tokens for input
+        "output": 0.015     # $0.015 per 1K tokens for output
+    },
     # Meta Llama Models (via OpenRouter)
     "meta-llama/llama-3.1-70b-instruct": {
         "input": 0.0001,    # $0.10 per 1M tokens = $0.0001 per 1K tokens for input
@@ -264,6 +320,70 @@ MODEL_CONFIGS = {
         "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
         "tokenizer": "gpt-4",
         "description": "GPT-5 model with full parameter support",
+        "provider": "openai"
+    },
+    "gpt-5-codex": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "GPT-5 Codex model optimized for code generation",
+        "provider": "openai"
+    },
+    "gpt-5-codex-mini": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "GPT-5 Codex Mini - smaller, faster version for code tasks",
+        "provider": "openai"
+    },
+    "gpt-5.1": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "GPT-5.1 model - improved version of GPT-5",
+        "provider": "openai"
+    },
+    "gpt-5.1-codex": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "GPT-5.1 Codex model - improved code generation model",
+        "provider": "openai"
+    },
+    "gpt-5.1-codex-mini": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "GPT-5.1 Codex Mini - smaller, faster improved code model",
+        "provider": "openai"
+    },
+    "gpt-5.1-codex-max": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "GPT-5.1 Codex Max - largest, most capable code model",
+        "provider": "openai"
+    },
+    "gpt-5.2": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "GPT-5.2 model - latest version of GPT-5",
+        "provider": "openai"
+    },
+    "gpt-5.2-codex": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "GPT-5.2 Codex model - latest code generation model",
         "provider": "openai"
     },
     "gpt-4": {
@@ -451,6 +571,15 @@ MODEL_CONFIGS = {
         "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
         "tokenizer": "gpt-4",
         "description": "DeepSeek R1 model with full parameter support",
+        "provider": "openrouter"
+    },
+    # TngTech Models (via OpenRouter)
+    "tngtech/deepseek-r1t2-chimera:free": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "TngTech DeepSeek R1T2 Chimera model (free tier) with full parameter support",
         "provider": "openrouter"
     },
     # Google Models (via OpenRouter)
@@ -731,6 +860,119 @@ MODEL_CONFIGS = {
         "tokenizer": "gpt-4",
         "description": "Google Gemini 3 Flash Preview via CLIProxyAPI",
         "provider": "cliproxyapi"
+    },
+    "qwen3-coder-plus": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Qwen3 Coder Plus via CLIProxyAPI",
+        "provider": "cliproxyapi"
+    },
+    "qwen3-coder-flash": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Qwen3 Coder Flash via CLIProxyAPI",
+        "provider": "cliproxyapi"
+    },
+    "gemini-claude-sonnet-4-5": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Gemini Claude Sonnet 4.5 via CLIProxyAPI",
+        "provider": "cliproxyapi"
+    },
+    "gemini-claude-sonnet-4-5-thinking": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Gemini Claude Sonnet 4.5 Thinking via CLIProxyAPI",
+        "provider": "cliproxyapi"
+    },
+    "gpt-oss-120b-medium": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "OpenAI GPT-OSS 120B Medium via CLIProxyAPI",
+        "provider": "cliproxyapi"
+    },
+    # Groq Models (via Groq API)
+    "llama-3.3-70b-versatile": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.3 70B Versatile via Groq",
+        "provider": "groq"
+    },
+    "llama-3.3-70b-specdec": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.3 70B Speculative Decoding via Groq",
+        "provider": "groq"
+    },
+    "llama-3.1-70b-versatile": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.1 70B Versatile via Groq",
+        "provider": "groq"
+    },
+    "llama-3.1-8b-instant": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.1 8B Instant (Fast) via Groq",
+        "provider": "groq"
+    },
+    "llama-3.2-1b-preview": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.2 1B Preview via Groq",
+        "provider": "groq"
+    },
+    "llama-3.2-3b-preview": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Meta Llama 3.2 3B Preview via Groq",
+        "provider": "groq"
+    },
+    "mixtral-8x7b-32768": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Mixtral 8x7B (32k context) via Groq",
+        "provider": "groq"
+    },
+    "gemma2-9b-it": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Google Gemma 2 9B via Groq",
+        "provider": "groq"
+    },
+    "gemma-7b-it": {
+        "max_temperature": 2.0,
+        "default_temperature": 0.0,
+        "supported_parameters": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"],
+        "tokenizer": "gpt-4",
+        "description": "Google Gemma 7B via Groq",
+        "provider": "groq"
     }
 }
 
@@ -772,6 +1014,22 @@ def is_cliproxyapi_model(model: str) -> bool:
     if model.startswith("cliproxy:"):
         return True
     
+    return False
+
+def is_groq_model(model: str) -> bool:
+    """
+    Check if a model should use Groq API.
+    
+    Models with prefix "groq:" will use Groq API.
+    
+    Args:
+        model (str): Model name
+        
+    Returns:
+        bool: True if model should use Groq API, False otherwise
+    """
+    if model.startswith("groq:"):
+        return True
     return False
 
 def get_model_config(model: str) -> dict:
@@ -969,6 +1227,11 @@ def send_to_llm(prompt, model, temperature=None, enable_token_counting=True, **k
         # Remove "cliproxy:" prefix if present
         actual_model = model.replace("cliproxy:", "")
         return send_to_cliproxyapi(prompt, actual_model, temperature, enable_token_counting, **kwargs)
+    
+    # Check if model should use Groq API
+    if is_groq_model(model):
+        actual_model = model.replace("groq:", "")
+        return send_to_groq(prompt, actual_model, temperature, enable_token_counting, **kwargs)
     
     # Route to appropriate provider based on model configuration
     if is_openai_model(model):
@@ -1358,8 +1621,8 @@ def send_to_cliproxyapi(prompt, model, temperature=None, enable_token_counting=T
         client = OpenAI(
             base_url="http://127.0.0.1:8317/v1",  # Local CLIProxyAPI endpoint
             api_key="your-api-key-1",  # Hard-coded API key for local use
-            timeout=30.0,  # 30 second timeout
-            max_retries=2  # Retry up to 2 times on transient failures
+            timeout=300.0,  # 300 second timeout
+            max_retries=5  # Retry up to 5 times on transient failures
         )
     except Exception as e:
         print(f"Error creating CLIProxyAPI client: {e}")
@@ -1400,11 +1663,19 @@ def send_to_cliproxyapi(prompt, model, temperature=None, enable_token_counting=T
             print(f"Warning: Could not count input tokens: {e}")
             input_tokens = None
     
+    # Auto-prepend 'gemini-' prefix for Claude Sonnet models via CLIProxyAPI
+    # This allows using shorter names like 'claude-sonnet-4-5' instead of 'gemini-claude-sonnet-4-5'
+    # Only apply prefix for API call, keep original model name for file naming/display
+    api_model = model
+    if model in ["claude-sonnet-4-5", "claude-sonnet-4-5-thinking"]:
+        api_model = f"gemini-{model}"
+        print(f"  Auto-prepended 'gemini-' prefix for API call: {api_model}")
+    
     # Prepare API call parameters in OpenAI-compatible format
     # CLIProxyAPI uses the same API format as OpenAI for compatibility
     # Ensure stream is always False (non-streaming mode)
     api_params = {
-        "model": model,  # Model name as understood by CLIProxyAPI
+        "model": api_model,  # Use api_model with prefix for API call
         "messages": [
             {"role": "system", "content": "You are a security assistant."},
             {"role": "user", "content": prompt}
@@ -1414,10 +1685,10 @@ def send_to_cliproxyapi(prompt, model, temperature=None, enable_token_counting=T
         # Put stream last to ensure it's always False, even if validated_params has stream
     }
     
-    # Retry logic with exponential backoff for rate limit errors
+    # Retry logic with exponential backoff for rate limit errors (429) and server errors (500)
     max_retries = 5
-    base_delay = 2  # Base delay in seconds
-    max_delay = 60  # Maximum delay in seconds
+    base_delay = 5  # Base delay in seconds (increased from 2)
+    max_delay = 120  # Maximum delay in seconds (increased from 60)
     response = None
     
     for attempt in range(max_retries):
@@ -1429,14 +1700,18 @@ def send_to_cliproxyapi(prompt, model, temperature=None, enable_token_counting=T
             break
             
         except Exception as e:
-            # Check if it's a rate limit error (429)
+            # Check if it's a rate limit error (429) or server error (500)
             is_rate_limit = False
+            is_server_error = False
             retry_after = None
             error_detail = None
+            status_code = None
             
             # Try to extract error details
             if hasattr(e, 'response'):
                 try:
+                    if hasattr(e.response, 'status_code'):
+                        status_code = e.response.status_code
                     if hasattr(e.response, 'json'):
                         error_detail = e.response.json()
                     elif hasattr(e.response, 'text'):
@@ -1449,15 +1724,23 @@ def send_to_cliproxyapi(prompt, model, temperature=None, enable_token_counting=T
                 except:
                     pass
             
-            # Check error message/code for rate limit
+            # Check error message/code for rate limit or server errors
             error_msg = str(e)
             if '429' in error_msg or 'rate limit' in error_msg.lower() or 'RATE_LIMIT' in error_msg:
                 is_rate_limit = True
+            elif '500' in error_msg or 'internal_server_error' in error_msg.lower() or 'server_error' in error_msg.lower():
+                is_server_error = True
+            elif status_code:
+                if status_code == 429:
+                    is_rate_limit = True
+                elif status_code == 500 or status_code >= 502:  # 500, 502, 503, 504
+                    is_server_error = True
             elif error_detail:
-                # Check error_detail dict for rate limit indicators
+                # Check error_detail dict for error indicators
                 if isinstance(error_detail, dict):
                     error_obj = error_detail.get('error', {})
-                    if error_obj.get('code') == 429 or 'RATE_LIMIT' in str(error_obj) or 'RESOURCE_EXHAUSTED' in str(error_obj):
+                    error_code = error_obj.get('code')
+                    if error_code == 429 or 'RATE_LIMIT' in str(error_obj) or 'RESOURCE_EXHAUSTED' in str(error_obj):
                         is_rate_limit = True
                         # Try to extract retry-after time from message
                         message = error_obj.get('message', '')
@@ -1466,25 +1749,30 @@ def send_to_cliproxyapi(prompt, model, temperature=None, enable_token_counting=T
                             match = re.search(r'reset after (\d+)s?', message.lower())
                             if match:
                                 retry_after = int(match.group(1))
+                    elif error_code == 500 or 'internal_server_error' in str(error_obj).lower() or 'server_error' in str(error_obj).lower():
+                        is_server_error = True
                 elif isinstance(error_detail, str):
                     if '429' in error_detail or 'rate limit' in error_detail.lower():
                         is_rate_limit = True
+                    elif '500' in error_detail or 'internal_server_error' in error_detail.lower():
+                        is_server_error = True
             
-            # If rate limit error and not last attempt, retry with backoff
-            if is_rate_limit and attempt < max_retries - 1:
+            # If retryable error (rate limit or server error) and not last attempt, retry with backoff
+            if (is_rate_limit or is_server_error) and attempt < max_retries - 1:
                 # Calculate delay: use retry_after if available, otherwise exponential backoff
                 if retry_after:
                     delay = min(retry_after + 1, max_delay)  # Add 1 second buffer
                 else:
                     delay = min(base_delay * (2 ** attempt), max_delay)  # Exponential backoff
                 
-                print(f"⚠️ Rate limit hit (attempt {attempt + 1}/{max_retries}). Waiting {delay}s before retry...")
+                error_type = "Rate limit" if is_rate_limit else "Server error"
+                print(f"⚠️ {error_type} hit (attempt {attempt + 1}/{max_retries}). Waiting {delay}s before retry...")
                 if retry_after:
                     print(f"   Server indicates quota resets after {retry_after}s")
                 time.sleep(delay)
                 continue
             else:
-                # Not a rate limit error, or last attempt - raise the error
+                # Not a retryable error, or last attempt - raise the error
                 # Better error handling to show full error details
                 error_msg = str(e)
                 if error_detail:
@@ -1553,6 +1841,123 @@ def send_to_cliproxyapi(prompt, model, temperature=None, enable_token_counting=T
     
     return response.choices[0].message.content
 
+def send_to_groq(prompt, model, temperature=None, enable_token_counting=True, **kwargs):
+    """
+    Send a prompt to Groq API and return the response.
+    
+    Groq provides fast inference for open-source models via an OpenAI-compatible API.
+    Uses GROQ_API_KEY from environment variable.
+    
+    Args:
+        prompt (str): The prompt to send
+        model (str): The model to use (e.g., "llama-3.3-70b-versatile")
+        temperature (float, optional): Temperature for response generation
+        enable_token_counting (bool): Whether to count tokens
+        **kwargs: Additional parameters (max_tokens, top_p, etc.)
+    
+    Returns:
+        str: The response from the model
+    """
+    # Get API key
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        # Hardcoded fallback for convenience
+        api_key = os.getenv("GROQ_API_KEY", "")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY not found in environment. Set it with: export GROQ_API_KEY=your-key")
+    
+    base_url = "https://api.groq.com/openai/v1"
+    
+    # Prepare temperature
+    temp = temperature if temperature is not None else 0.0
+    max_tokens = kwargs.get("max_tokens", 4096)
+    timeout = kwargs.get("timeout", 120)
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a security assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": temp,
+        "max_tokens": max_tokens
+    }
+    
+    # Retry logic
+    max_retries = 5
+    base_delay = 2
+    max_delay = 60
+    
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(
+                f"{base_url}/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=timeout
+            )
+            
+            if resp.status_code == 429:
+                # Rate limit - retry with backoff
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                print(f"⚠️ Groq rate limit hit (attempt {attempt + 1}/{max_retries}). Waiting {delay}s...")
+                time.sleep(delay)
+                continue
+            
+            if not resp.ok:
+                error_msg = f"Groq API error: HTTP {resp.status_code}"
+                try:
+                    error_data = resp.json()
+                    if 'error' in error_data:
+                        error_msg += f" - {error_data['error']}"
+                except:
+                    error_msg += f" - {resp.text[:200]}"
+                raise Exception(error_msg)
+            
+            result = resp.json()
+            content = result["choices"][0]["message"]["content"]
+            
+            # Print usage info
+            usage = result.get("usage", {})
+            print("\n" + "="*50)
+            print(f"Groq API Call Summary (Model: {model})")
+            print("-"*50)
+            print(f"Input tokens:  {usage.get('prompt_tokens', 'N/A'):>8}")
+            print(f"Output tokens: {usage.get('completion_tokens', 'N/A'):>8}")
+            print(f"Total tokens:  {usage.get('total_tokens', 'N/A'):>8}")
+            print("-"*50)
+            try:
+                config = get_model_config(model)
+                print(f"Model config: {config['description']}")
+            except:
+                print(f"Model config: Groq API")
+            print(f"Parameters used: temperature={temp}, max_tokens={max_tokens}")
+            print("="*50 + "\n")
+            
+            return content
+            
+        except requests.exceptions.Timeout:
+            if attempt < max_retries - 1:
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                print(f"⚠️ Groq timeout (attempt {attempt + 1}/{max_retries}). Waiting {delay}s...")
+                time.sleep(delay)
+                continue
+            raise
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1 and ('429' in str(e) or '500' in str(e) or '502' in str(e)):
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                print(f"⚠️ Groq error (attempt {attempt + 1}/{max_retries}). Waiting {delay}s...")
+                time.sleep(delay)
+                continue
+            raise
+    
+    raise Exception("Failed to get response from Groq API after all retry attempts")
+
 def list_supported_models():
     """
     List all supported models with their configurations.
@@ -1607,6 +2012,15 @@ def test_model_connectivity(model_name="gpt-4o"):
                 timeout=10.0
             )
             print("✓ CLIProxyAPI client created successfully")
+            return True
+        
+        # Check Groq models
+        if is_groq_model(model_name):
+            groq_key = os.getenv('GROQ_API_KEY')
+            if not groq_key:
+                print("✗ GROQ_API_KEY environment variable is not set")
+                return False
+            print("✓ Groq client configured successfully")
             return True
         
         # Check OpenAI models

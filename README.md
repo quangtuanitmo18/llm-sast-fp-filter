@@ -24,7 +24,7 @@ This framework combines static analysis with LLMs for security vulnerability det
 ### Proposed Method Architecture
 
 <div align="center">
-  <img src="assets/images/схема_архитектуры_предлагаемого_методика.png?v=1" alt="Proposed Method Architecture" width="800">
+  <img src="assets/images/схема_архитектуры_предлагаемого_методика_white.png" alt="Proposed Method Architecture" width="800">
 </div>
 
 **Note:**
@@ -38,7 +38,7 @@ This framework combines static analysis with LLMs for security vulnerability det
 ### Code Context Extraction Algorithm
 
 <div align="center">
-  <img src="assets/images/Блок-схема_алгоритма_извлечения_контекста_кода.png?v=1" alt="Code Context Extraction Algorithm" width="800">
+  <img src="assets/images/Блок-схема_алгоритма_извлечения_контекста_кода_white.png" alt="Code Context Extraction Algorithm" width="800">
 </div>
 
 Passing entire files to an LLM is inefficient and introduces significant "information noise". To solve this, our algorithm dynamically extracts only the verified vulnerability path (from source to sink) based on the SARIF report. The extraction handles two key scenarios:
@@ -72,7 +72,7 @@ To minimize hallucinations and turn the LLM into a strict security auditor, we u
 ### Data Collection Methodology
 
 <div align="center">
-  <img src="assets/images/Методология_сбора_данных_и_датасета.png?v=1" alt="Data Collection Methodology" width="800">
+  <img src="assets/images/Методология_сбора_данных_и_датасета_white.png" alt="Data Collection Methodology" width="800">
 </div>
 
 To rigorously evaluate the LLMs, we utilize two distinct datasets:
@@ -228,7 +228,7 @@ python run_dashboard.py
 
 This project includes an interactive Streamlit dashboard for visualizing analysis results and model performance. The dashboard provides a dark theme interface with detailed model comparison views as shown here: 
 <div align="center">
-  <img src="assets/images/dashboard_preview.png?v=1" alt="Dashboard Preview" width="600">
+  <img src="assets/images/dashboard_preview_white.png" alt="Dashboard Preview" width="600">
 </div>
 
 ### Dashboard Features
@@ -253,7 +253,7 @@ To evaluate the effectiveness of the LLMs in reducing false positive alerts, we 
 #### Results on OWASP Benchmark
 
 <div align="center">
-  <img src="assets/images/Результаты_оценки:_Снижение_ложноположительных_срабатываний_(RQ1)_OWASP.png?v=1" alt="RQ1 Results - OWASP" width="800">
+  <img src="assets/images/Результаты_оценки:_Снижение_ложноположительных_срабатываний_(RQ1)_OWASP_white.png" alt="RQ1 Results - OWASP" width="800">
 </div>
 
 On the synthetic OWASP dataset, most leading models easily filter out the informational noise. Because vulnerabilities in this benchmark are typically isolated within single files, models with strong syntax recognition perform exceptionally well.
@@ -262,7 +262,7 @@ On the synthetic OWASP dataset, most leading models easily filter out the inform
 #### Results on Real-World Projects (OpenVuln)
 
 <div align="center">
-  <img src="assets/images/Результаты_оценки:_Снижение_ложноположительных_срабатываний_(RQ1)_OpenVuln.png?v=1" alt="RQ1 Results - OpenVuln" width="800">
+  <img src="assets/images/Результаты_оценки:_Снижение_ложноположительных_срабатываний_(RQ1)_OpenVuln_white.png" alt="RQ1 Results - OpenVuln" width="800">
 </div>
 
 The real-world evaluation reveals significant differences in model capabilities:
@@ -515,12 +515,12 @@ When deploying a security analysis system into a real CI/CD pipeline, businesses
 
 <div align="center">
   <h4>OWASP Benchmark</h4>
-  <img src="assets/images/Анализ_компромисса:_Стоимость_vs_Задержка_(RQ4)_OWASP.png?v=1" alt="Cost vs Latency Trade-off (OWASP)" width="800">
+  <img src="assets/images/Анализ_компромисса:_Стоимость_vs_Задержка_(RQ4)_OWASP_white.png" alt="Cost vs Latency Trade-off (OWASP)" width="800">
   
   <br><br>
 
   <h4>OpenVuln Dataset</h4>
-  <img src="assets/images/Анализ_компромисса:_Стоимость_vs_Задержка_(RQ4)_OpenVuln.png?v=1" alt="Cost vs Latency Trade-off (OpenVuln)" width="800">
+  <img src="assets/images/Анализ_компромисса:_Стоимость_vs_Задержка_(RQ4)_OpenVuln_white.png" alt="Cost vs Latency Trade-off (OpenVuln)" width="800">
 </div>
 
 1. **Fastest and Most Cost-Effective (The "First Pass" Filter):** Google's models excel in this category. **Gemini 2.5 Flash** is the speed champion with a latency of just 4.11 ms/token and an extremely low price of $0.30 per 1M tokens. This model group is ideal as a preliminary filter to immediately discard obvious false positives and save time.
